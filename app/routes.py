@@ -1,4 +1,5 @@
 from flask import Blueprint, render_template, jsonify, request, session
+from app import limiter
 from app.monitoring import snapshot, read_policy, safe_service_status
 from app.admin import manage_service, update_app_env, change_network_profile
 from app.audit import record_audit
@@ -14,7 +15,9 @@ def dashboard():
     return render_template("dashboard.html", username=session.get("username", "admin"), services=services, apps=apps, network_profiles=policy.get("network_profiles", []))
 
 @main_bp.get("/api/metrics")
-def api_metrics(): return jsonify(snapshot())
+@limiter.limit("2400 per hour", override_defaults=True)
+def api_metrics():
+    return jsonify(snapshot())
 
 @main_bp.post("/api/services/<service>/<action>")
 def api_service(service, action):

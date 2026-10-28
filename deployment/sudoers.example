@@ -1,0 +1,3 @@
+# Install as /etc/sudoers.d/urrise-console using visudo -cf before enabling.
+# Keep the helper and its policy root-owned and non-writable by the service account.
+urrise-console ALL=(root) NOPASSWD: /usr/local/sbin/urrise-console-helper

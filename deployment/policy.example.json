@@ -1,0 +1,12 @@
+{
+  "protected_services": ["ssh.service", "sshd.service", "urrise-console.service"],
+  "services": {
+    "nginx.service": {"label": "Nginx web server"},
+    "ssh.service": {"label": "OpenSSH server"},
+    "urrise-console.service": {"label": "URRISE Console"}
+  },
+  "apps": {
+    "sample-api": {"label": "Sample API", "service": "sample-api.service"}
+  },
+  "network_profiles": []
+}

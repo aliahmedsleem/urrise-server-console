@@ -1,0 +1,97 @@
+#!/usr/bin/python3
+"""Root-owned, narrowly scoped privileged helper. Do not make writable by the app user."""
+import ipaddress, json, os, re, subprocess, sys, tempfile
+POLICY = "/etc/urrise-console/policy.json"
+ENV_DIR = "/etc/urrise-console/apps"
+KEY_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,63}$")
+APP_RE = re.compile(r"^[A-Za-z0-9_-]{1,48}$")
+SERVICE_RE = re.compile(r"^[A-Za-z0-9_.@:-]{1,128}$")
+
+def run(args, timeout=12):
+    return subprocess.run(args, capture_output=True, text=True, timeout=timeout, check=False, env={"PATH":"/usr/sbin:/usr/bin:/sbin:/bin", "LANG":"C.UTF-8"})
+def policy():
+    with open(POLICY, encoding="utf-8") as f: return json.load(f)
+def fail(message, code=2):
+    print(json.dumps({"ok":False,"error":message})); sys.exit(code)
+def main(argv):
+    if not argv: fail("Missing action")
+    p=policy(); action=argv[0]
+    if action == "service" and len(argv)==3:
+        op, name=argv[1], argv[2]
+        if name not in p.get("services", {}) or not SERVICE_RE.fullmatch(name): fail("Service is not allowlisted")
+        protected = set(p.get("protected_services", ["ssh.service", "sshd.service", "urrise-console.service"]))
+        if name in protected and op != "start": fail("Protected service cannot be stopped or restarted from the dashboard")
+        if op not in {"start","stop","restart"}: fail("Invalid service operation")
+        r=run(["/usr/bin/systemctl", op, name], timeout=25)
+        if r.returncode: fail("systemd operation failed")
+        print(json.dumps({"ok":True,"service":name,"action":op})); return
+    if action == "env-set" and len(argv)==4:
+        app,key,value=argv[1:]
+        apps=p.get("apps", {})
+        if app not in apps or not APP_RE.fullmatch(app): fail("Application is not allowlisted")
+        if not KEY_RE.fullmatch(key) or len(value)>2048 or any(c in value for c in "\x00\n\r"): fail("Invalid environment variable")
+        service=apps[app].get("service", "")
+        if not SERVICE_RE.fullmatch(service): fail("Invalid associated service")
+        protected = set(p.get("protected_services", ["ssh.service", "sshd.service", "urrise-console.service"]))
+        if service in protected: fail("Application environment editor cannot target a protected service")
+        if not service.endswith(".service") or "/" in service or service.startswith("-"):
+            fail("Only named systemd .service units can receive application environment updates")
+        if any(c in value for c in "\x00\n\r") or value.startswith("#"): fail("Unsupported environment value")
+        os.makedirs(ENV_DIR, mode=0o750, exist_ok=True)
+        path=os.path.join(ENV_DIR, app+".env")
+        existing={}
+        try:
+            with open(path, encoding="utf-8") as f:
+                for line in f:
+                    line=line.rstrip("\n")
+                    if "=" in line:
+                        k,v=line.split("=",1)
+                        if KEY_RE.fullmatch(k): existing[k]=v.strip().strip('"')
+        except FileNotFoundError: pass
+        existing[key]=value
+        content="".join(f'{k}="{v.replace(chr(92), chr(92)*2).replace(chr(34), chr(92)+chr(34))}"\n' for k,v in sorted(existing.items()))
+        fd,tmp=tempfile.mkstemp(prefix=".env-", dir=ENV_DIR, text=True)
+        try:
+            os.fchmod(fd,0o640)
+            with os.fdopen(fd,"w",encoding="utf-8") as f: f.write(content); f.flush(); os.fsync(f.fileno())
+            os.replace(tmp,path); os.chown(path,0,0); os.chmod(path,0o640)
+        finally:
+            if os.path.exists(tmp): os.unlink(tmp)
+        r=run(["/usr/bin/systemctl","show",service,"--property=LoadState","--value"])
+        if r.returncode or r.stdout.strip()!="loaded": fail("Associated systemd service is not loaded; variable saved but service was not restarted")
+        dropin=f"/etc/systemd/system/{service}.d/urrise-console-env.conf"
+        os.makedirs(os.path.dirname(dropin), mode=0o755, exist_ok=True)
+        data=f"[Service]\nEnvironmentFile=-{path}\n"
+        fd,tmp=tempfile.mkstemp(prefix=".urrise-",dir=os.path.dirname(dropin),text=True)
+        try:
+            os.fchmod(fd,0o644)
+            with os.fdopen(fd,"w",encoding="utf-8") as f: f.write(data); f.flush(); os.fsync(f.fileno())
+            os.replace(tmp,dropin); os.chown(dropin,0,0); os.chmod(dropin,0o644)
+        finally:
+            if os.path.exists(tmp): os.unlink(tmp)
+        r=run(["/usr/bin/systemctl","daemon-reload"])
+        if r.returncode: fail("Variable saved but systemd reload failed")
+        r=run(["/usr/bin/systemctl","restart",service],timeout=30)
+        if r.returncode: fail("Variable saved but service restart failed")
+        print(json.dumps({"ok":True,"app":app,"key":key,"restarted":service})); return
+    if action == "network" and len(argv)>=3:
+        profile, mode=argv[1],argv[2]
+        if profile not in p.get("network_profiles", []): fail("Network profile is not allowlisted")
+        if mode=="auto" and len(argv)==3:
+            r=run(["/usr/bin/nmcli","connection","modify",profile,"ipv4.method","auto","ipv4.addresses","","ipv4.gateway","","ipv4.dns",""])
+        elif mode=="manual" and len(argv)==6:
+            try:
+                iface=ipaddress.ip_interface(argv[3]); gateway=ipaddress.ip_address(argv[4]); dns=argv[5].split(",")
+                if iface.version!=4 or gateway not in iface.network or not 1<=len(dns)<=3: fail("Invalid IPv4 configuration")
+                for x in dns:
+                    if ipaddress.ip_address(x).version!=4: fail("DNS must use IPv4 addresses")
+            except ValueError: fail("Invalid network address")
+            r=run(["/usr/bin/nmcli","connection","modify",profile,"ipv4.method","manual","ipv4.addresses",str(iface),"ipv4.gateway",str(gateway),"ipv4.dns",",".join(dns)])
+        else: fail("Invalid network operation")
+        if r.returncode: fail("Network profile modification failed")
+        print(json.dumps({"ok":True,"profile":profile,"message":"Profile saved but not activated. Activate from trusted console after reviewing the configuration."})); return
+    fail("Unsupported action")
+
+if __name__=="__main__":
+    try: main(sys.argv[1:])
+    except Exception: fail("Internal helper failure")

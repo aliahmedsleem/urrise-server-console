@@ -1,0 +1,30 @@
+[Unit]
+Description=URRISE Server Console (Flask/Gunicorn)
+After=network.target
+
+[Service]
+Type=simple
+User=urrise-console
+Group=urrise-console
+WorkingDirectory=/opt/urrise-server-console
+EnvironmentFile=/etc/urrise-console/urrise-console.env
+ExecStart=/opt/urrise-server-console/.venv/bin/gunicorn --workers 1 --threads 4 --bind 127.0.0.1:8000 --timeout 30 --access-logfile - --error-logfile - wsgi:app
+Restart=on-failure
+RestartSec=3
+UMask=0027
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/urrise-console
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,4 @@
+# Example for an app managed through the Environment tab.
+# Add this to the target app's systemd unit only after reviewing the service ID.
+# [Service]
+# EnvironmentFile=-/etc/urrise-console/apps/sample-api.env

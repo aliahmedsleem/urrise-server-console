@@ -21,6 +21,17 @@
     } catch (err) { status.textContent = 'Notification status unavailable'; }
   }
   showCurrentStatus();
+  const testButton = document.getElementById('test-push');
+  testButton?.addEventListener('click', async () => {
+    testButton.disabled = true;
+    try {
+      const response = await fetch('/api/push/test', {method:'POST', credentials:'same-origin', headers:{'X-CSRFToken':csrf()}});
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw Error(data.error || data.message || 'Test notification failed');
+      status.textContent = data.message + ' · ' + data.accepted + ' device(s)';
+    } catch (err) { status.textContent = err.message; }
+    finally { testButton.disabled = false; }
+  });
   button.addEventListener('click', async () => {
     button.disabled = true;
     try {

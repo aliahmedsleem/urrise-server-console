@@ -105,7 +105,12 @@ def run():
             try:
                 readings = snapshot()
                 capacity = os.environ.get("ALERT_NETWORK_CAPACITY_MBPS", "").strip()
-                alerts = evaluate(readings, float(capacity) if capacity else None)
+                try:
+                    capacity_mbps = float(capacity) if capacity else None
+                except ValueError:
+                    capacity_mbps = None
+                    log.warning("Invalid ALERT_NETWORK_CAPACITY_MBPS; network alert disabled")
+                alerts = evaluate(readings, capacity_mbps)
                 current = {(a.metric, a.target): a for a in alerts}
                 for key, alert in current.items():
                     count_key = (key, alert.level)
@@ -125,7 +130,7 @@ def run():
                     notify(alert, event.id)
                     active[key] = (alert.level, now)
                 # A missing sensor or unmeasured network capacity is not recovery.
-                observed = observed_metrics(readings, capacity)
+                observed = observed_metrics(readings, capacity_mbps)
                 for key in list(active):
                     if key in current or key not in observed:
                         recovery_consecutive.pop(key, None)

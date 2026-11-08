@@ -34,3 +34,5 @@
  .account-menu[open] summary{border-color:var(--gold);color:var(--gold-soft)}
 }
 @media(max-width:370px){.metric-card{padding:9px}.metric-icon{width:23px;height:23px;flex-basis:23px}.metric-label{font-size:8px}.metric-foot{font-size:8px}}
+
+@media(max-width:760px){.mobile-bottom-nav{grid-template-columns:repeat(5,minmax(0,1fr));padding-left:3px;padding-right:3px}.mobile-bottom-nav a{font-size:clamp(8px,2.3vw,10px);min-width:0}.mobile-bottom-nav a span{font-size:18px}}

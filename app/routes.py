@@ -110,3 +110,41 @@ def push_subscribe():
     subscription.subscription_json = json.dumps({"endpoint": endpoint, "keys": {"p256dh": keys["p256dh"], "auth": keys["auth"]}})
     db.session.commit()
     return jsonify({"ok": True})
+
+
+@main_bp.post("/api/push/test")
+@limiter.limit("3 per hour")
+def push_test():
+    """Send a user-initiated diagnostic push to this signed-in user's devices only."""
+    from pywebpush import webpush, WebPushException
+    private = os.environ.get("VAPID_PRIVATE_KEY", "")
+    subject = os.environ.get("VAPID_SUBJECT", "")
+    if not private or not subject:
+        return jsonify({"ok": False, "error": "Push sender is not configured"}), 503
+    user_id = session.get("user_id")
+    if not user_id:
+        abort(401)
+    subscriptions = PushSubscription.query.filter_by(user_id=user_id).all()
+    if not subscriptions:
+        return jsonify({"ok": False, "error": "No subscribed devices for this account"}), 409
+    delivered, failed = 0, 0
+    for subscription in subscriptions:
+        try:
+            webpush(
+                subscription_info=json.loads(subscription.subscription_json),
+                data=json.dumps({"title": "URRISE Test Notification", "body": "Push delivery is working for your server console.", "url": "/", "event_id": "test"}),
+                vapid_private_key=private,
+                vapid_claims={"sub": subject},
+                ttl=120,
+            )
+            delivered += 1
+        except WebPushException as exc:
+            failed += 1
+            if exc.response is not None and exc.response.status_code in (404, 410):
+                db.session.delete(subscription)
+        except Exception:
+            failed += 1
+            current_app.logger.exception("Diagnostic push failed")
+    db.session.commit()
+    return jsonify({"ok": delivered > 0, "accepted": delivered, "failed": failed,
+                    "message": "Push provider accepted test notification" if delivered else "Test push delivery failed"}), (200 if delivered else 502)

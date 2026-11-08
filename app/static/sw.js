@@ -8,7 +8,7 @@ self.addEventListener('push', event => {
   const body = String(data.body || 'Server alert');
   event.waitUntil(self.registration.showNotification(title, {
     body, tag: 'urrise-alert-' + String(data.event_id || Date.now()),
-    icon: '/static/icons/icon-192.png', data: {url: '/'}
+    icon: '/static/icons/urrise.svg', data: {url: '/'}
   }));
 });
 self.addEventListener('notificationclick', event => {

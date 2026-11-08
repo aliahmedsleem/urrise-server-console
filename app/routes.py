@@ -17,6 +17,36 @@ def dashboard():
     apps = [{"id": app_id, "label": details.get("label", app_id), "service": details.get("service", "")} for app_id, details in policy.get("apps", {}).items()]
     return render_template("dashboard.html", username=session.get("username", "admin"), services=services, apps=apps, network_profiles=policy.get("network_profiles", []))
 
+
+@main_bp.get("/monitoring")
+def monitoring_center():
+    """Read-only infrastructure monitoring center."""
+    policy = read_policy()
+    services = []
+    for name, details in policy.get("services", {}).items():
+        if not isinstance(details, dict):
+            details = {}
+        services.append({"name": name, "label": details.get("label", name),
+                         "status": safe_service_status(name)})
+    return render_template("monitoring.html", services=services)
+
+@main_bp.get("/api/monitoring")
+def api_monitoring():
+    """Read-only service status and recent event history."""
+    policy = read_policy()
+    services = []
+    for name, details in policy.get("services", {}).items():
+        if not isinstance(details, dict):
+            details = {}
+        services.append({"name": name, "label": details.get("label", name),
+                         "status": safe_service_status(name)})
+    events = AlertEvent.query.order_by(AlertEvent.id.desc()).limit(100).all()
+    return jsonify({"services": services, "events": [
+        {"id": row.id, "metric": row.metric, "target": row.target,
+         "level": row.level, "value": row.value, "unit": row.unit,
+         "created_at": row.created_at.isoformat()}
+        for row in events]})
+
 @main_bp.get("/api/metrics")
 @limiter.limit("2400 per hour", override_defaults=True)
 def api_metrics():

@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}Monitoring Center · URRISE{% endblock %}
+{% block body %}
+<main class="monitor-center">
+  <header class="monitor-header">
+    <div><a href="/" class="monitor-back">← Overview</a><p class="monitor-eyebrow">URRISE / INFRASTRUCTURE</p><h1>Monitoring Center</h1><p class="muted">Live service health and incident history</p></div>
+    <div class="monitor-refresh"><span id="monitor-updated" role="status">Connecting…</span><button id="monitor-reload" type="button" class="button secondary">Refresh</button></div>
+  </header>
+  <section class="monitor-summary" aria-label="Service summary">
+    <article><small>TOTAL SERVICES</small><strong id="monitor-total">{{ services|length }}</strong></article>
+    <article><small>RUNNING</small><strong id="monitor-running">—</strong></article>
+    <article><small>NOT RUNNING</small><strong id="monitor-down">—</strong></article>
+    <article><small>RECENT INCIDENTS</small><strong id="monitor-incidents">—</strong></article>
+  </section>
+  <section class="monitor-section"><div class="monitor-heading"><div><h2>Systemd services</h2><p class="muted">Read-only · approved services</p></div><span class="monitor-tag">LIVE STATUS</span></div>
+    <div class="monitor-services" id="monitor-services">
+      {% for service in services %}
+      <article class="monitor-service"><div><b>{{ service.label }}</b><small>{{ service.name }}</small></div><span class="monitor-state {{ 'is-up' if service.status == 'active' else 'is-down' }}">{{ service.status }}</span></article>
+      {% endfor %}
+    </div>
+  </section>
+  <section class="monitor-section"><div class="monitor-heading"><div><h2>Incident history</h2><p class="muted">Recent alert and recovery events · newest first</p></div></div>
+    <div class="monitor-events" id="monitor-events" aria-live="polite">Loading events…</div>
+  </section>
+  <p class="monitor-footnote">Status is refreshed every 30 seconds. Incident history records confirmed events; it does not measure total downtime. Times are displayed in your device's local timezone.</p>
+</main>
+<link rel="stylesheet" href="{{ url_for('static', filename='css/monitoring.css') }}">
+<script src="{{ url_for('static', filename='js/monitoring.js') }}" defer></script>
+{% endblock %}

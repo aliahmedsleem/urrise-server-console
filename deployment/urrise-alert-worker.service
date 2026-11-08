@@ -1,0 +1,23 @@
+[Unit]
+Description=URRISE resource alert worker
+After=network-online.target urrise-console.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=urrise-console
+Group=urrise-console
+WorkingDirectory=/opt/urrise-server-console
+EnvironmentFile=/etc/urrise-console/urrise-console.env
+ExecStart=/opt/urrise-server-console/.venv/bin/python -m app.alert_worker
+Restart=always
+RestartSec=10
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/urrise-console
+
+[Install]
+WantedBy=multi-user.target

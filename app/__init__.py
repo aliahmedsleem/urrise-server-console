@@ -22,7 +22,7 @@ def create_app(test_config=None):
     csrf.init_app(app)
     limiter.init_app(app)
 
-    from app.models import User, AuditLog  # noqa: F401
+    from app.models import User, AuditLog, PushSubscription, AlertEvent  # noqa: F401
     from app.auth import auth_bp
     from app.routes import main_bp
     app.register_blueprint(auth_bp)
@@ -30,7 +30,7 @@ def create_app(test_config=None):
 
     @app.before_request
     def enforce_auth():
-        allowed = ("auth.login", "auth.logout", "static")
+        allowed = ("auth.login", "auth.logout", "static", "main.manifest", "main.service_worker")
         if request.endpoint and request.endpoint not in allowed and not session.get("user_id"):
             if request.path.startswith("/api/"):
                 abort(401)

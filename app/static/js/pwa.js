@@ -10,6 +10,28 @@
     const raw = atob((key + padding).replace(/-/g, '+').replace(/_/g, '/'));
     return Uint8Array.from(raw, ch => ch.charCodeAt(0));
   };
+  async function showCurrentStatus() {
+    try {
+      if (!('PushManager' in window) || !('Notification' in window)) { status.textContent = 'Push not supported in this browser'; return; }
+      if (Notification.permission === 'denied') { status.textContent = 'Notifications blocked in browser settings'; return; }
+      const registration = await navigator.serviceWorker.ready;
+      const existing = await registration.pushManager.getSubscription();
+      if (existing) { status.textContent = 'Notifications subscribed on this device'; button.textContent = 'Refresh subscription'; }
+      else if (Notification.permission === 'granted') status.textContent = 'Permission granted — tap to subscribe';
+    } catch (err) { status.textContent = 'Notification status unavailable'; }
+  }
+  showCurrentStatus();
+  const testButton = document.getElementById('test-push');
+  testButton?.addEventListener('click', async () => {
+    testButton.disabled = true;
+    try {
+      const response = await fetch('/api/push/test', {method:'POST', credentials:'same-origin', headers:{'X-CSRFToken':csrf()}});
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw Error(data.error || data.message || 'Test notification failed');
+      status.textContent = data.message + ' · ' + data.accepted + ' device(s)';
+    } catch (err) { status.textContent = err.message; }
+    finally { testButton.disabled = false; }
+  });
   button.addEventListener('click', async () => {
     button.disabled = true;
     try {
@@ -28,7 +50,7 @@
         body:JSON.stringify(subscription.toJSON())
       });
       if (!saved.ok) throw Error('Subscription could not be saved');
-      status.textContent = 'Push notifications enabled';
+      status.textContent = 'Push notifications enabled'; button.textContent = 'Refresh subscription';
     } catch (err) { status.textContent = err.message; }
     finally { button.disabled = false; }
   });

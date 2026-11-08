@@ -17,6 +17,36 @@ def dashboard():
     apps = [{"id": app_id, "label": details.get("label", app_id), "service": details.get("service", "")} for app_id, details in policy.get("apps", {}).items()]
     return render_template("dashboard.html", username=session.get("username", "admin"), services=services, apps=apps, network_profiles=policy.get("network_profiles", []))
 
+
+@main_bp.get("/monitoring")
+def monitoring_center():
+    """Read-only infrastructure monitoring center."""
+    policy = read_policy()
+    services = []
+    for name, details in policy.get("services", {}).items():
+        if not isinstance(details, dict):
+            details = {}
+        services.append({"name": name, "label": details.get("label", name),
+                         "status": safe_service_status(name)})
+    return render_template("monitoring.html", services=services)
+
+@main_bp.get("/api/monitoring")
+def api_monitoring():
+    """Read-only service status and recent event history."""
+    policy = read_policy()
+    services = []
+    for name, details in policy.get("services", {}).items():
+        if not isinstance(details, dict):
+            details = {}
+        services.append({"name": name, "label": details.get("label", name),
+                         "status": safe_service_status(name)})
+    events = AlertEvent.query.order_by(AlertEvent.id.desc()).limit(100).all()
+    return jsonify({"services": services, "events": [
+        {"id": row.id, "metric": row.metric, "target": row.target,
+         "level": row.level, "value": row.value, "unit": row.unit,
+         "created_at": row.created_at.isoformat()}
+        for row in events]})
+
 @main_bp.get("/api/metrics")
 @limiter.limit("2400 per hour", override_defaults=True)
 def api_metrics():
@@ -110,3 +140,41 @@ def push_subscribe():
     subscription.subscription_json = json.dumps({"endpoint": endpoint, "keys": {"p256dh": keys["p256dh"], "auth": keys["auth"]}})
     db.session.commit()
     return jsonify({"ok": True})
+
+
+@main_bp.post("/api/push/test")
+@limiter.limit("3 per hour")
+def push_test():
+    """Send a user-initiated diagnostic push to this signed-in user's devices only."""
+    from pywebpush import webpush, WebPushException
+    private = os.environ.get("VAPID_PRIVATE_KEY", "")
+    subject = os.environ.get("VAPID_SUBJECT", "")
+    if not private or not subject:
+        return jsonify({"ok": False, "error": "Push sender is not configured"}), 503
+    user_id = session.get("user_id")
+    if not user_id:
+        abort(401)
+    subscriptions = PushSubscription.query.filter_by(user_id=user_id).all()
+    if not subscriptions:
+        return jsonify({"ok": False, "error": "No subscribed devices for this account"}), 409
+    delivered, failed = 0, 0
+    for subscription in subscriptions:
+        try:
+            webpush(
+                subscription_info=json.loads(subscription.subscription_json),
+                data=json.dumps({"title": "URRISE Test Notification", "body": "Push delivery is working for your server console.", "url": "/", "event_id": "test"}),
+                vapid_private_key=private,
+                vapid_claims={"sub": subject},
+                ttl=120,
+            )
+            delivered += 1
+        except WebPushException as exc:
+            failed += 1
+            if exc.response is not None and exc.response.status_code in (404, 410):
+                db.session.delete(subscription)
+        except Exception:
+            failed += 1
+            current_app.logger.exception("Diagnostic push failed")
+    db.session.commit()
+    return jsonify({"ok": delivered > 0, "accepted": delivered, "failed": failed,
+                    "message": "Push provider accepted test notification" if delivered else "Test push delivery failed"}), (200 if delivered else 502)

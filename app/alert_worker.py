@@ -2,12 +2,13 @@
 import json
 import logging
 import os
+import subprocess
 import time
 from datetime import datetime, timezone
 from app import create_app, db
 from app.alerts import evaluate
 from app.models import AlertEvent, PushSubscription
-from app.monitoring import snapshot
+from app.monitoring import snapshot, read_policy
 
 log = logging.getLogger(__name__)
 INTERVAL = 30
@@ -76,6 +77,48 @@ def observed_metrics(readings, capacity=None):
 
     return observed
 
+
+def monitored_service_states(policy, runner=subprocess.run):
+    """Read allowlisted service states; unknown results are not outages."""
+    result = {}
+    for name in policy.get("services", {}):
+        if not isinstance(name, str) or not name.endswith(".service"):
+            continue
+        if name in ("urrise-alert-worker.service", "urrise-console.service"):
+            continue
+        try:
+            proc = runner(["/usr/bin/systemctl", "is-active", name],
+                          capture_output=True, text=True, timeout=3, check=False)
+            state = proc.stdout.strip()
+            if state in ("active", "inactive", "failed"):
+                result[name] = state
+        except (OSError, subprocess.TimeoutExpired):
+            log.warning("Unable to read service state: %s", name)
+    return result
+
+
+def service_transitions(states, observed, down_counts, up_counts, confirmations=2):
+    """Pure transition detector; initial baseline requires confirmed active state."""
+    events = []
+    for name, state in observed.items():
+        if state == "active":
+            up_counts[name] = up_counts.get(name, 0) + 1
+            down_counts.pop(name, None)
+            if up_counts[name] >= confirmations:
+                if states.get(name) == "down":
+                    events.append((name, "recovered"))
+                states[name] = "up"
+        else:
+            down_counts[name] = down_counts.get(name, 0) + 1
+            up_counts.pop(name, None)
+            if down_counts[name] >= confirmations and states.get(name) == "up":
+                states[name] = "down"
+                events.append((name, "critical"))
+    for name in set(states) - set(observed):
+        down_counts.pop(name, None)
+        up_counts.pop(name, None)
+    return events
+
 def run():
     logging.basicConfig(level=logging.INFO)
     app = create_app()
@@ -83,6 +126,7 @@ def run():
     consecutive = {}
     recovery_consecutive = {}
     active = {}
+    service_states, service_down_counts, service_up_counts = {}, {}, {}
     with app.app_context():
         # Restore last known alert states after a worker restart.
         for event in AlertEvent.query.order_by(AlertEvent.id.asc()).all():
@@ -103,9 +147,24 @@ def run():
                 )
         while True:
             try:
+                service_observed = monitored_service_states(read_policy())
+                for service_name, level in service_transitions(
+                    service_states, service_observed, service_down_counts, service_up_counts
+                ):
+                    event = AlertEvent(metric='service', target=service_name,
+                                       level=level, value=0, unit='')
+                    db.session.add(event)
+                    db.session.commit()
+                    from app.alerts import Alert
+                    notify(Alert('service', level, 0, '', service_name), event.id)
                 readings = snapshot()
                 capacity = os.environ.get("ALERT_NETWORK_CAPACITY_MBPS", "").strip()
-                alerts = evaluate(readings, float(capacity) if capacity else None)
+                try:
+                    capacity_mbps = float(capacity) if capacity else None
+                except ValueError:
+                    capacity_mbps = None
+                    log.warning("Invalid ALERT_NETWORK_CAPACITY_MBPS; network alert disabled")
+                alerts = evaluate(readings, capacity_mbps)
                 current = {(a.metric, a.target): a for a in alerts}
                 for key, alert in current.items():
                     count_key = (key, alert.level)
@@ -125,7 +184,7 @@ def run():
                     notify(alert, event.id)
                     active[key] = (alert.level, now)
                 # A missing sensor or unmeasured network capacity is not recovery.
-                observed = observed_metrics(readings, capacity)
+                observed = observed_metrics(readings, capacity_mbps)
                 for key in list(active):
                     if key in current or key not in observed:
                         recovery_consecutive.pop(key, None)

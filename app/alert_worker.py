@@ -42,6 +42,13 @@ def run():
     consecutive = {}
     active = {}
     with app.app_context():
+        # Restore last known alert states after a worker restart.
+        for event in AlertEvent.query.order_by(AlertEvent.id.asc()).all():
+            key = (event.metric, event.target)
+            if event.level == "recovered":
+                active.pop(key, None)
+            elif event.level in ("warning", "critical"):
+                active[key] = (event.level, time.monotonic())
         while True:
             try:
                 readings = snapshot()
@@ -61,8 +68,16 @@ def run():
                     db.session.commit()
                     notify(alert, event.id)
                     active[key] = (alert.level, now)
+                # A missing sensor or unmeasured network capacity is not recovery.
+                observed = {("ram", "")}
+                observed.update(("storage", d.get("mount", "")) for d in readings.get("disks", []) if d.get("percent") is not None)
+                thermal = readings.get("thermal", {}).get("cpu", {}).get("celsius")
+                if thermal is not None:
+                    observed.add(("cpu_temperature", ""))
+                if capacity and readings.get("network", {}).get("download_bps") is not None:
+                    observed.add(("network", ""))
                 for key in list(active):
-                    if key not in current:
+                    if key in observed and key not in current:
                         active.pop(key, None)
                         db.session.add(AlertEvent(metric=key[0], target=key[1], level="recovered", value=0, unit=""))
                         db.session.commit()

@@ -1,0 +1,17 @@
+{
+  "name": "URRISE Server Console",
+  "short_name": "URRISE Console",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#0c1424",
+  "theme_color": "#0c1424",
+  "icons": [
+    {
+      "src": "/static/icons/urrise.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

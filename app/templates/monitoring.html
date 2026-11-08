@@ -23,7 +23,7 @@
     <div class="monitor-events" id="monitor-events" aria-live="polite">Loading events…</div>
   </section>
   <p class="monitor-footnote">Status is refreshed every 30 seconds. Incident history records confirmed events; it does not measure total downtime. Times are displayed in your device's local timezone.</p>
-</main>
+</main><nav class="mobile-bottom-nav" aria-label="Mobile navigation"><a href="/#overview"><span>▦</span>Overview</a><a href="{{ url_for('main.monitoring_center') }}" aria-current="page"><span>◉</span>Monitoring</a><a href="/#services"><span>⚙</span>Services</a><a href="/#notifications"><span>♧</span>Alerts</a><a href="/#network"><span>⌁</span>Network</a></nav>
 <link rel="stylesheet" href="{{ url_for('static', filename='css/monitoring.css') }}">
 <script src="{{ url_for('static', filename='js/monitoring.js') }}" defer></script>
 {% endblock %}

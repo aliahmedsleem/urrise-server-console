@@ -18,5 +18,41 @@
   function csrfToken(){return document.querySelector('input[name="csrf_token"]')?.value||document.querySelector('meta[name="csrf-token"]')?.content||'';}
   const networkForm=$('network-form');if(networkForm)networkForm.addEventListener('submit',async e=>{e.preventDefault();const f=new FormData(networkForm);const profile=f.get('profile'),mode=f.get('mode');if(!confirm(`Save ${mode} network configuration for “${profile}”? It will not be activated automatically.`))return;try{const d=await api('/api/network',{method:'POST',headers:{'X-CSRFToken':csrfToken()},body:JSON.stringify({profile,mode,address:f.get('address'),gateway:f.get('gateway'),dns:f.get('dns')})});toast(d.message||'Network profile saved.');}catch(err){toast(err.message,true);}});
   const envForm=$('env-form');if(envForm)envForm.addEventListener('submit',async e=>{e.preventDefault();const f=new FormData(envForm);if(!f.get('confirm'))return;try{const d=await api(`/api/apps/${encodeURIComponent(f.get('app_id'))}/env`,{method:'POST',headers:{'X-CSRFToken':csrfToken()},body:JSON.stringify({key:f.get('key'),value:f.get('value')})});envForm.reset();toast(d.message||'Variable saved.');}catch(err){toast(err.message,true);}});
+  function connectionCell(row, value){const td=document.createElement('td');td.textContent=String(value??'—');row.append(td);}
+  function connectionEmpty(body, columns, message){body.replaceChildren();const tr=document.createElement('tr'),td=document.createElement('td');td.colSpan=columns;td.className='empty';td.textContent=message;tr.append(td);body.append(tr);}
+  async function refreshConnections(){
+    const webBody=$('conn-web-table'),tcpBody=$('conn-tcp-table');
+    if(!webBody||!tcpBody)return;
+    try{
+      const data=await api('/api/connections/live?minutes=30');
+      const web=data.web||{},tcp=data.tcp||{};
+      $('conn-log-status').textContent=web.available?'Readable':'Unavailable';
+      $('conn-web-count').textContent=web.available?(web.items||[]).length:'—';
+      $('conn-tcp-count').textContent=tcp.available?(tcp.items||[]).length:'—';
+      webBody.replaceChildren();
+      if(!web.available||!(web.items||[]).length){connectionEmpty(webBody,5,web.reason||'No web activity in this period.');}
+      else web.items.forEach(x=>{const tr=document.createElement('tr');connectionCell(tr,x.ip);connectionCell(tr,[x.device_type,x.os].filter(Boolean).join(' · '));connectionCell(tr,x.browser);connectionCell(tr,new Date(x.last_seen).toLocaleString());connectionCell(tr,x.requests);webBody.append(tr);});
+      tcpBody.replaceChildren();
+      if(!tcp.available||!(tcp.items||[]).length){connectionEmpty(tcpBody,4,tcp.reason||'No established sockets.');}
+      else tcp.items.forEach(x=>{const tr=document.createElement('tr');connectionCell(tr,x.local_ip+':'+x.local_port);connectionCell(tr,x.remote_ip+':'+x.remote_port);connectionCell(tr,[22,80,443,8081,8766].includes(x.local_port)?'Inbound (likely)':'Outbound / other');connectionCell(tr,x.state);tcpBody.append(tr);});
+    }catch(e){connectionEmpty(webBody,5,e.message);connectionEmpty(tcpBody,4,'Connection data unavailable');}
+  }
+
+  async function refreshConnectionHistory(){
+    const body=$('conn-history-table'),status=$('conn-history-status');
+    if(!body)return;
+    status.textContent='Reading available access logs…';
+    try{
+      const data=await api('/api/connections/history?days=7');
+      body.replaceChildren();
+      status.textContent=`${data.readable_files} log file(s) readable · ${data.skipped_files} skipped${data.partial?' · partial history':''}`;
+      if(!(data.items||[]).length){connectionEmpty(body,6,'No readable historical requests found.');return;}
+      data.items.forEach(x=>{const tr=document.createElement('tr');[x.ip,[x.device_type,x.os].filter(Boolean).join(' · '),x.browser,new Date(x.first_seen).toLocaleString(),new Date(x.last_seen).toLocaleString(),x.requests].forEach(v=>connectionCell(tr,v));body.append(tr);});
+    }catch(e){status.textContent='History unavailable';connectionEmpty(body,6,e.message);}
+  }
+  $('refresh-connection-history')?.addEventListener('click',refreshConnectionHistory);
+  $('refresh-connections')?.addEventListener('click',refreshConnections);
+  refreshConnections();
+  setInterval(()=>{if(document.visibilityState==='visible')refreshConnections();},30000);
   $('refresh-audit')?.addEventListener('click',refreshAudit);window.addEventListener('resize',drawChart);refresh();refreshAudit();setInterval(refresh,2000);setInterval(refreshAudit,30000);
 })();

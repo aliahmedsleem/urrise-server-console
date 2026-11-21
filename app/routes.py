@@ -178,3 +178,21 @@ def push_test():
     db.session.commit()
     return jsonify({"ok": delivered > 0, "accepted": delivered, "failed": failed,
                     "message": "Push provider accepted test notification" if delivered else "Test push delivery failed"}), (200 if delivered else 502)
+
+
+@main_bp.get("/api/connections/live")
+@limiter.limit("240 per hour")
+def api_connections_live():
+    from app.connections import tcp_connections, recent_web
+    return jsonify({"tcp": tcp_connections(), "web": recent_web(minutes=30)})
+
+
+@main_bp.get("/api/connections/history")
+@limiter.limit("30 per hour")
+def api_connections_history():
+    from app.connections import connection_history
+    try:
+        days = max(1, min(30, int(request.args.get("days", "7"))))
+    except (ValueError, TypeError):
+        days = 7
+    return jsonify(connection_history(days=days))

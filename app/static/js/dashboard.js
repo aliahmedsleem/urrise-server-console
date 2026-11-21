@@ -38,6 +38,20 @@
       else tcp.items.forEach(x=>{const tr=document.createElement('tr');connectionCell(tr,x.local_ip+':'+x.local_port);connectionCell(tr,x.remote_ip+':'+x.remote_port);connectionCell(tr,[22,80,443,8081,8766].includes(x.local_port)?'Inbound (likely)':'Outbound / other');connectionCell(tr,x.state);tcpBody.append(tr);});
     }catch(e){connectionEmpty(webBody,5,e.message);connectionEmpty(tcpBody,4,'Connection data unavailable');}
   }
+
+  async function refreshConnectionHistory(){
+    const body=$('conn-history-table'),status=$('conn-history-status');
+    if(!body)return;
+    status.textContent='Reading available access logs…';
+    try{
+      const data=await api('/api/connections/history?days=7');
+      body.replaceChildren();
+      status.textContent=`${data.readable_files} log file(s) readable · ${data.skipped_files} skipped${data.partial?' · partial history':''}`;
+      if(!(data.items||[]).length){connectionEmpty(body,6,'No readable historical requests found.');return;}
+      data.items.forEach(x=>{const tr=document.createElement('tr');[x.ip,[x.device_type,x.os].filter(Boolean).join(' · '),x.browser,new Date(x.first_seen).toLocaleString(),new Date(x.last_seen).toLocaleString(),x.requests].forEach(v=>connectionCell(tr,v));body.append(tr);});
+    }catch(e){status.textContent='History unavailable';connectionEmpty(body,6,e.message);}
+  }
+  $('refresh-connection-history')?.addEventListener('click',refreshConnectionHistory);
   $('refresh-connections')?.addEventListener('click',refreshConnections);
   refreshConnections();
   setInterval(()=>{if(document.visibilityState==='visible')refreshConnections();},30000);

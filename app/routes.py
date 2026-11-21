@@ -61,7 +61,7 @@ def api_audit():
     return jsonify([{"username": x.username, "action": x.action, "target": x.target, "result": x.result, "created_at": x.created_at.isoformat()} for x in rows])
 
 @main_bp.get("/api/connections/live")
-@limiter.limit("120 per hour")
+@limiter.limit("240 per hour")
 def api_connections_live():
     from app.connections import tcp_connections, recent_web
-    return jsonify({"tcp": tcp_connections(), "web": recent_web()})
+    return jsonify({"tcp": tcp_connections(), "web": recent_web(minutes=30)})

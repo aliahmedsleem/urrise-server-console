@@ -27,6 +27,10 @@
 <div class="panel-heading"><div><h3>Recent web activity</h3><p class="muted">Most recently seen clients</p></div></div>
 <div class="table-scroll"><table><thead><tr><th>IP ADDRESS</th><th>DEVICE / OS</th><th>BROWSER</th><th>LAST SEEN</th><th>REQUESTS</th></tr></thead><tbody id="conn-web-table"><tr><td colspan="5" class="empty">Loading web activity…</td></tr></tbody></table></div>
 <div class="admin-divider"></div>
+<div class="panel-heading"><div><h3>Connection history</h3><p class="muted">Observed HTTP activity from readable current and rotated logs</p></div><button class="mini-button" id="refresh-connection-history" type="button">Load last 7 days</button></div>
+<p class="muted" id="conn-history-status">Historical logs may require separate read permissions.</p>
+<div class="table-scroll"><table><thead><tr><th>IP ADDRESS</th><th>DEVICE / OS</th><th>BROWSER</th><th>FIRST SEEN</th><th>LAST SEEN</th><th>REQUESTS</th></tr></thead><tbody id="conn-history-table"><tr><td colspan="6" class="empty">Select Load last 7 days.</td></tr></tbody></table></div>
+<div class="admin-divider"></div>
 <div class="panel-heading"><div><h3>Live TCP connections</h3><p class="muted">Kernel socket snapshot; inbound and outbound connections</p></div></div>
 <div class="table-scroll"><table><thead><tr><th>LOCAL ADDRESS</th><th>REMOTE ADDRESS</th><th>DIRECTION</th><th>STATE</th></tr></thead><tbody id="conn-tcp-table"><tr><td colspan="4" class="empty">Loading TCP sockets…</td></tr></tbody></table></div>
 </section>

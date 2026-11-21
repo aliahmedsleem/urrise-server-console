@@ -83,3 +83,65 @@ def tcp_connections(limit=150):
                      "state": conn.status, "pid": conn.pid})
     return {"available": True, "classification": "tcp_sockets_not_users",
             "items": rows[:limit], "truncated": len(rows) > limit}
+
+
+def connection_history(days=7, limit=200):
+    """Summarize observed HTTP clients from current and rotated Console logs.
+
+    This is request history, not an authentication or session history.
+    Rotated files must be readable by the service account.
+    """
+    import gzip
+    now = datetime.now(timezone.utc)
+    cutoff = now - timedelta(days=max(1, min(int(days), 30)))
+    paths = [LOG_PATH]
+    paths.extend(LOG_PATH.parent.glob(LOG_PATH.name + ".[0-9]*"))
+    groups = {}
+    readable = 0
+    skipped = 0
+    for path in sorted(paths, key=lambda p: p.name)[:40]:
+        try:
+            opener = gzip.open if path.suffix == ".gz" else open
+            with opener(path, "rb") as stream:
+                readable += 1
+                # Limit work per file; newest records are at the end for plain logs.
+                if path.suffix != ".gz":
+                    stream.seek(0, os.SEEK_END)
+                    size = stream.tell()
+                    stream.seek(max(0, size - 8_000_000))
+                    if size > 8_000_000:
+                        stream.readline()
+                count = 0
+                for raw in stream:
+                    count += 1
+                    if count > 100_000:
+                        break
+                    match = LOG_RE.match(raw.decode("utf-8", errors="replace").strip())
+                    if not match:
+                        continue
+                    row = match.groupdict()
+                    try:
+                        when = datetime.strptime(row["time"], "%d/%b/%Y:%H:%M:%S %z")
+                    except ValueError:
+                        continue
+                    if when < cutoff or when > now + timedelta(minutes=1):
+                        continue
+                    agent = row["agent"][:512]
+                    key = (row["ip"], agent)
+                    item = groups.get(key)
+                    if item is None:
+                        item = {"ip": row["ip"], **describe_agent(agent),
+                                "first_seen": when.isoformat(), "last_seen": when.isoformat(),
+                                "requests": 0}
+                        groups[key] = item
+                    item["requests"] += 1
+                    if when.isoformat() < item["first_seen"]:
+                        item["first_seen"] = when.isoformat()
+                    if when.isoformat() > item["last_seen"]:
+                        item["last_seen"] = when.isoformat()
+        except (OSError, EOFError):
+            skipped += 1
+    return {"available": readable > 0, "classification": "http_request_history",
+            "days": days, "readable_files": readable, "skipped_files": skipped,
+            "partial": skipped > 0,
+            "items": sorted(groups.values(), key=lambda x: x["last_seen"], reverse=True)[:limit]}
